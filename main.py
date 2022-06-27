@@ -1,8 +1,8 @@
-from enum import Enum
 import time
+import sys
+import inspect
 
-CommandState = Enum('NEW_COMMAND', 'IN_COMMAND')
-
+import commands
 
 class MsgByte:
     def __init__(self, csv_line):
@@ -69,25 +69,45 @@ class GenericCommand:
         # Command packet is currently being assembled so more data is required
         return False
 
-class BLCommand:
-    def __init__(self, name, id, fields):
-        self.command_name = name
-        self.id = id
-        self.fields = fields
+    def raw(self):
+        return self.__header + self.payload
 
 class CommandTranslator:
-    def __init__(self, commands_list):
-        self.commands_list = commands_list
+    def __init__(self, cmds_module = commands):
+        cmds_classes = self.extract_classes(cmds_module)
+        self._cmds_dict = self.generate_dict(cmds_classes)
 
-    def translate(self, generic_command):
-        passed_id = generic_command.id
+    @staticmethod
+    def extract_classes(module):
+        pred = lambda m: inspect.isclass(m) and m.__module__ == module.__name__
+        name_and_cls_tuples = inspect.getmembers(module, pred)
+        return [tuple[1] for tuple in name_and_cls_tuples]
+
+    @staticmethod
+    def generate_dict(cmds_classes):
+        dict = {}
+        for cmd_cls in cmds_classes:
+            cmd_id = cmd_cls.id.default
+            if isinstance(cmd_id, int):
+                dict[cmd_id] = cmd_cls
+        return dict
+
+    def translate(self, generic_cmd):
+        cmd_id = generic_cmd.id
+        try:
+            cmd_cls = self._cmds_dict[cmd_id]
+            return cmd_cls(generic_cmd.raw())
+        except KeyError:
+            return commands.UnknownCommand(id = cmd_id)
 
 
 def main():
     csv_path = '/home/jatsekku/Desktop/boot.csv'
 
-    generic_command = GenericCommand()
-    handshake_command = HandshakeCommand()
+    generic_cmd = GenericCommand()
+    handshake_cmd = HandshakeCommand()
+    cmds_translator = CommandTranslator()
+
     last_handshake_detection = False
     cnt = 0
 
@@ -96,23 +116,25 @@ def main():
             msg = MsgByte(csv_line)
 
             # Always look for handshake
-            handshake_detected = handshake_command.feed(msg.byte)
+            handshake_detected = handshake_cmd.feed(msg.byte)
 
             if handshake_detected is False:
                 # If there was handshake - print it out and reset object
                 if last_handshake_detection is True:
-                   print('handshake', msg.byte, handshake_command.hand)
-                   handshake_command = HandshakeCommand()
+                   print('handshake', msg.byte, handshake_cmd.hand)
+                   handshake_cmd = HandshakeCommand()
                    # Reset generic command object at the end of handshae block
-                   generic_command = GenericCommand()
+                   generic_cmd = GenericCommand()
 
                 # If there is no handshake - try to assembly generic command
-                command_detected = generic_command.feed(msg.byte)
+                command_detected = generic_cmd.feed(msg.byte)
                  # Generic command has been assembled
                 if command_detected is True:
-                    print(generic_command)
+                    packet = cmds_translator.translate(generic_cmd)
+                    packet.remove_payload()
+                    packet.show()
                      # Reset generic command object
-                    generic_command = GenericCommand()
+                    generic_cmd = GenericCommand()
 
             last_handshake_detection = handshake_detected
 

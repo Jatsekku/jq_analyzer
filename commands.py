@@ -1,5 +1,11 @@
 from scapy.all import *
 
+# ------------------------------ UnknownCommand --------------------------------
+class UnknownCommand(Packet):
+    fields_desc = [XByteField('id', None),
+                   XByteField('rsvd', 0x00),
+                   ShortField('len', 0)]
+
 # ------------------------------- GetBootInfo ----------------------------------
 class GetBootInfo(Packet):
     fields_desc = [XByteField('id', 0x10),
@@ -50,7 +56,7 @@ class LoadSegmentData(Packet):
                    XByteField('rsvd', 0x00),
                    LEShortField('len', 0),
                    XStrLenField('seg_data', b'',
-                                length_from = lambda pkt: int(pkt.len))]]
+                                length_from = lambda pkt: int(pkt.len))]
 
 # -------------------------------- CheckImage ----------------------------------
 class CheckImage(Packet):
@@ -139,7 +145,3 @@ class FlashReadJedecID(Packet):
     fields_desc = [XByteField('id', 0x36),
                    XByteField('rsvd', 0x00),
                    ShortField('len', 0)]
-
-p = LoadSignature(len = 3, signature = b'\x01\x02\x03')
-print(raw(p))
-p.show2()
